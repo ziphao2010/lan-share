@@ -55,6 +55,12 @@ func safeJoin(root, urlPath string) (string, error) {
 type Server struct {
 	root   string
 	logger *log.Logger
+	secret string
+}
+
+// SetSecret 启用 token 鉴权，secret 为空时关闭鉴权。
+func (s *Server) SetSecret(secret string) {
+	s.secret = secret
 }
 
 func New(root string) *Server {
@@ -65,6 +71,10 @@ func New(root string) *Server {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if s.secret != "" && !s.checkToken(r) {
+		http.Error(w, "forbidden: invalid or expired token", http.StatusForbidden)
+		return
+	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
