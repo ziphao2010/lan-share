@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -57,5 +58,24 @@ type Server struct {
 func New(root string) *Server { return &Server{root: root} }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "not implemented", http.StatusNotImplemented)
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	full, err := safeJoin(s.root, r.URL.Path)
+	if err != nil {
+		http.Error(w, "forbidden path", http.StatusBadRequest)
+		return
+	}
+	info, err := os.Stat(full)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if info.IsDir() {
+		// 目录处理在后续任务：先 404
+		http.NotFound(w, r)
+		return
+	}
+	s.serveFile(w, r, full)
 }
