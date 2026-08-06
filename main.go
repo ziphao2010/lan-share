@@ -1,10 +1,19 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
+	"os/signal"
+	"path/filepath"
+	"strconv"
+	"syscall"
 	"time"
+
+	"lan-share/pkg/ipaddr"
+	"lan-share/pkg/server"
 )
 
 type Config struct {
@@ -49,11 +58,102 @@ func parseArgs(args []string) (*Config, error) {
 	return &cfg, nil
 }
 
+func run(cfg *Config) error {
+	abs, err := filepath.Abs(cfg.Path)
+	if err != nil {
+		return fmt.Errorf("resolve path: %w", err)
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return fmt.Errorf("%s 不存在: %v", abs, err)
+	}
+	port, err := server.NextPort(cfg.Port, 10)
+	if err != nil {
+		return err
+	}
+	root := abs
+	if !info.IsDir() {
+		root = filepath.Dir(abs)
+	}
+
+	srv := server.New(root)
+	if cfg.Secret != "" {
+		srv.SetSecret(cfg.Secret)
+	}
+
+	var expire time.Time
+	if cfg.Expire > 0 {
+		expire = time.Now().Add(cfg.Expire)
+	}
+
+	rel := "/"
+	if !info.IsDir() {
+		rel = "/" + filepath.Base(abs)
+	}
+
+	ips := ipaddr.ListLocalIPs()
+	if cfg.IP != "" {
+		ips = []string{cfg.IP}
+	}
+
+	if !cfg.Quiet {
+		if info.IsDir() {
+			fmt.Printf("分享目录：%s\n", abs)
+		} else {
+			fmt.Printf("分享文件：%s (%s)\n", abs, server.HumanSize(info.Size()))
+		}
+		fmt.Println("直链:")
+	}
+	for _, ip := range ips {
+		u := srv.LinkURL(ip, port, rel, expire)
+		fmt.Println("  " + u)
+	}
+	if !cfg.Quiet {
+		if expire.IsZero() {
+			fmt.Println("过期时间：永久")
+		} else {
+			fmt.Println("过期时间：" + expire.Format("2006-01-02 15:04"))
+		}
+		fmt.Println("访问保护：" + flagOn(cfg.Secret))
+		fmt.Println("Ctrl+C 停止服务")
+	}
+
+	handler := http.Server{
+		Addr:    cfg.Bind + ":" + strconv.Itoa(port),
+		Handler: srv,
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- handler.ListenAndServe()
+	}()
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+	select {
+	case err := <-errCh:
+		return fmt.Errorf("http server: %w", err)
+	case <-stop:
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = handler.Shutdown(ctx)
+		return nil
+	}
+}
+
 func main() {
 	cfg, err := parseArgs(os.Args[1:])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "lan-share:", err)
 		os.Exit(1)
 	}
-	_ = cfg // TODO: wired up in later tasks
+	if err := run(cfg); err != nil {
+		fmt.Fprintln(os.Stderr, "lan-share:", err)
+		os.Exit(1)
+	}
+}
+
+func flagOn(s string) string {
+	if s == "" {
+		return "无"
+	}
+	return "开启"
 }
