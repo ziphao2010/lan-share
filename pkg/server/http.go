@@ -4,6 +4,7 @@ package server
 import (
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -52,10 +53,16 @@ func safeJoin(root, urlPath string) (string, error) {
 
 // Server 是 http.Handler 最小骨架，后续任务填充。
 type Server struct {
-	root string
+	root   string
+	logger *log.Logger
 }
 
-func New(root string) *Server { return &Server{root: root} }
+func New(root string) *Server {
+	return &Server{
+		root:   root,
+		logger: log.New(os.Stderr, "[lan-share] ", log.LstdFlags),
+	}
+}
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -73,8 +80,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if info.IsDir() {
-		// 目录处理在后续任务：先 404
-		http.NotFound(w, r)
+		if r.URL.Query().Get("zip") == "1" {
+			s.serveZip(w, full)
+			return
+		}
+		s.serveDirList(w, r, full)
 		return
 	}
 	s.serveFile(w, r, full)
