@@ -80,6 +80,7 @@ func run(cfg *Config) error {
 	if cfg.Secret != "" {
 		srv.SetSecret(cfg.Secret)
 	}
+	srv.SetZipMode(cfg.ZipMode)
 
 	var expire time.Time
 	if cfg.Expire > 0 {

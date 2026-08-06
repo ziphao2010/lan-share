@@ -48,3 +48,21 @@ func TestServeZipStreamsDirectory(t *testing.T) {
 		t.Errorf("sub/b.bin = %q, want beta", names["sub/b.bin"])
 	}
 }
+
+func TestServeZipModeWithoutQuery(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "a.txt"), []byte("alpha"), 0o644)
+
+	srv := New(root)
+	srv.SetZipMode(true)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "zip") {
+		t.Errorf("Content-Type = %q, want zip in zip mode", ct)
+	}
+}

@@ -53,14 +53,20 @@ func safeJoin(root, urlPath string) (string, error) {
 
 // Server 是 http.Handler 最小骨架，后续任务填充。
 type Server struct {
-	root   string
-	logger *log.Logger
-	secret string
+	root    string
+	logger  *log.Logger
+	secret  string
+	zipMode bool
 }
 
 // SetSecret 启用 token 鉴权，secret 为空时关闭鉴权。
 func (s *Server) SetSecret(secret string) {
 	s.secret = secret
+}
+
+// SetZipMode 使目录根路径直接以 zip 包响应，无需 ?zip=1 参数。
+func (s *Server) SetZipMode(on bool) {
+	s.zipMode = on
 }
 
 func New(root string) *Server {
@@ -90,7 +96,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if info.IsDir() {
-		if r.URL.Query().Get("zip") == "1" {
+		if s.zipMode || r.URL.Query().Get("zip") == "1" {
 			s.serveZip(w, full)
 			return
 		}
