@@ -11,7 +11,7 @@ import (
 )
 
 // serveZip 流式打包目录，边遍历边写入 zip，内存占用恒定。
-func (s *Server) serveZip(w http.ResponseWriter, dir string) {
+func (s *Server) serveZip(w http.ResponseWriter, r *http.Request, dir string) {
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.zip"`, filepath.Base(dir)))
 	zw := zip.NewWriter(w)

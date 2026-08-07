@@ -78,30 +78,59 @@ func New(root string) *Server {
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if s.secret != "" && !s.checkToken(r) {
-		http.Error(w, "forbidden: invalid or expired token", http.StatusForbidden)
+		s.writeNotFound(w, r, http.StatusForbidden, "403 禁止访问：令牌无效或已过期")
 		return
 	}
-	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	switch r.Method {
+	case http.MethodOptions:
+		w.Header().Set("Allow", "GET, HEAD, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Range, If-None-Match, If-Modified-Since")
+		w.WriteHeader(http.StatusOK)
+		return
+	case http.MethodGet, http.MethodHead:
+	default:
+		w.Header().Set("Allow", "GET, HEAD, OPTIONS")
+		s.writeNotFound(w, r, http.StatusMethodNotAllowed, "405 方法不允许")
 		return
 	}
 	full, err := safeJoin(s.root, r.URL.Path)
 	if err != nil {
-		http.Error(w, "forbidden path", http.StatusBadRequest)
+		s.writeNotFound(w, r, http.StatusBadRequest, "400 非法路径")
 		return
 	}
 	info, err := os.Stat(full)
 	if err != nil {
-		http.NotFound(w, r)
+		s.writeNotFound(w, r, http.StatusNotFound, "404 文件不存在")
 		return
 	}
 	if info.IsDir() {
 		if s.zipMode || r.URL.Query().Get("zip") == "1" {
-			s.serveZip(w, full)
+			s.serveZip(w, r, full)
 			return
 		}
 		s.serveDirList(w, r, full)
 		return
 	}
 	s.serveFile(w, r, full)
+}
+
+// writeNotFound 输出中文错误页。
+func (s *Server) writeNotFound(w http.ResponseWriter, r *http.Request, code int, msg string) {
+	title := ""
+	switch code {
+	case http.StatusNotFound:
+		title = "文件不存在"
+	case http.StatusForbidden:
+		title = "禁止访问"
+	case http.StatusBadRequest:
+		title = "非法请求"
+	case http.StatusMethodNotAllowed:
+		title = "方法不允许"
+	default:
+		title = "错误"
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(code)
+	fmt.Fprintf(w, `<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><title>%d %s</title></head><body><h1>%d %s</h1><p>%s</p><p><a href="/">返回首页</a></p></body></html>`, code, title, code, title, msg)
 }
