@@ -17,11 +17,4 @@ foreach ($t in $targets) {
 }
 Remove-Item Env:GOOS -ErrorAction SilentlyContinue
 Remove-Item Env:GOARCH -ErrorAction SilentlyContinue
-
-# Windows 图形版启动器（仅本机 Windows 上可用）
-if ($env:OS -eq "Windows_NT") {
-  $env:CGO_ENABLED = "0"
-  go build -trimpath -ldflags="-s -w -H=windowsgui" -o "dist/lan-share-gui.exe" ./cmd/gui
-  if ($?) { Write-Host "built dist/lan-share-gui.exe" }
-}
 Write-Host "Done."
