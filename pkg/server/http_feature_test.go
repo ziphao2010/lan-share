@@ -1,6 +1,8 @@
 package server
 
 import (
+	"bytes"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -75,5 +77,29 @@ func TestDirListingCacheControl(t *testing.T) {
 	srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 	if rec.Header().Get("Cache-Control") == "" {
 		t.Error("dir listing should have Cache-Control: no-cache")
+	}
+}
+
+func TestAccessLogWritesEntries(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "f.txt"), []byte("hello"), 0o644)
+
+	var buf bytes.Buffer
+	srv := New(root)
+	srv.SetLogger(log.New(&buf, "", 0))
+	srv.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/f.txt", nil))
+
+	out := buf.String()
+	if !strings.Contains(out, "GET /f.txt") {
+		t.Errorf("log should contain method+path, got: %s", out)
+	}
+	if !strings.Contains(out, "200") {
+		t.Errorf("log should contain status 200, got: %s", out)
+	}
+	if !strings.Contains(out, "5B") {
+		t.Errorf("log should contain bytes=5B, got: %s", out)
+	}
+	if !strings.Contains(out, "ms") {
+		t.Errorf("log should contain duration, got: %s", out)
 	}
 }

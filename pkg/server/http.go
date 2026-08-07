@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 var errForbidden = errors.New("path escapes share root")
@@ -69,6 +70,13 @@ func (s *Server) SetZipMode(on bool) {
 	s.zipMode = on
 }
 
+// SetLogger 替换日志输出目标（默认 stderr）。
+func (s *Server) SetLogger(l *log.Logger) {
+	if l != nil {
+		s.logger = l
+	}
+}
+
 func New(root string) *Server {
 	return &Server{
 		root:   root,
@@ -77,6 +85,13 @@ func New(root string) *Server {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
+	start := time.Now()
+	defer func() {
+		s.accessLog(r, sw, time.Since(start))
+	}()
+	w = sw
+
 	if s.secret != "" && !s.checkToken(r) {
 		s.writeNotFound(w, r, http.StatusForbidden, "403 禁止访问：令牌无效或已过期")
 		return
@@ -133,4 +148,36 @@ func (s *Server) writeNotFound(w http.ResponseWriter, r *http.Request, code int,
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(code)
 	fmt.Fprintf(w, `<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><title>%d %s</title></head><body><h1>%d %s</h1><p>%s</p><p><a href="/">返回首页</a></p></body></html>`, code, title, code, title, msg)
+}
+
+// statusWriter 包装 ResponseWriter，记录响应状态码与写入字节数。
+type statusWriter struct {
+	http.ResponseWriter
+	status int
+	bytes  int64
+}
+
+func (w *statusWriter) WriteHeader(code int) {
+	w.status = code
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *statusWriter) Write(b []byte) (int, error) {
+	n, err := w.ResponseWriter.Write(b)
+	w.bytes += int64(n)
+	return n, err
+}
+
+// accessLog 输出一行访问日志：时间 方法 路径 状态 字节 耗时 客户端IP
+func (s *Server) accessLog(r *http.Request, sw *statusWriter, d time.Duration) {
+	clientIP := r.RemoteAddr
+	if h, _, err := net.SplitHostPort(clientIP); err == nil {
+		clientIP = h
+	}
+	path := r.URL.Path
+	if r.URL.RawQuery != "" {
+		path += "?" + r.URL.RawQuery
+	}
+	s.logger.Printf("%s %s %d %dB %dms %s",
+		r.Method, path, sw.status, sw.bytes, d.Milliseconds(), clientIP)
 }
