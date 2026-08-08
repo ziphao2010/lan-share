@@ -36,7 +36,7 @@ func NextPort(start, attempts int) (int, error) {
 func safeJoin(root, urlPath string) (string, error) {
 	dec, err := url.PathUnescape(urlPath)
 	if err != nil {
-		return "", errForbidden
+		return "", errors.New("invalid path")
 	}
 	segs := strings.Split(strings.ReplaceAll(dec, `\`, "/"), "/")
 	full := root

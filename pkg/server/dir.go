@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+var dirTmpl = template.Must(template.New("dir").Parse(dirPage))
+
 type dirEntry struct {
 	Name      string
 	Size      string
@@ -46,12 +48,21 @@ func (s *Server) serveDirList(w http.ResponseWriter, r *http.Request, dir string
 		}
 		href := strings.TrimSuffix(r.URL.Path, "/") + "/" + url.PathEscape(name)
 		items = append(items, dirEntry{
-			Name: disp,
-			Size: HumanSize(info.Size()),
+			Name:      disp,
+			Size:      HumanSize(info.Size()),
 			SizeBytes: info.Size(),
-			Mod:  info.ModTime(),
-			URL:  href,
+			Mod:       info.ModTime(),
+			URL:       href,
 		})
+	}
+	if r.URL.Path != "/" && r.URL.Path != "" {
+		parentURL := strings.TrimRight(r.URL.Path, "/")
+		if idx := strings.LastIndex(parentURL, "/"); idx >= 0 {
+			parentURL = parentURL[:idx+1]
+		} else {
+			parentURL = "/"
+		}
+		items = append([]dirEntry{{Name: "..", URL: parentURL}}, items...)
 	}
 	sort.Slice(items, func(i, j int) bool {
 		less := false
@@ -69,7 +80,6 @@ func (s *Server) serveDirList(w http.ResponseWriter, r *http.Request, dir string
 		return less
 	})
 
-	tmpl := template.Must(template.New("dir").Parse(dirPage))
 	data := struct {
 		Path    string
 		Items   []dirEntry
@@ -87,7 +97,10 @@ func (s *Server) serveDirList(w http.ResponseWriter, r *http.Request, dir string
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
-	tmpl.Execute(w, data)
+	if err := dirTmpl.Execute(w, data); err != nil {
+		http.Error(w, "template error", http.StatusInternalServerError)
+		return
+	}
 }
 
 // HumanSize 输出人类可读大小（如 4.2 GiB）。

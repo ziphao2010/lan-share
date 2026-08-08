@@ -26,7 +26,7 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, full string) 
 	w.Header().Set("Cache-Control", "public, max-age=0")
 	etag := fmt.Sprintf(`"%x-%x"`, info.ModTime().UnixNano(), info.Size())
 	w.Header().Set("ETag", etag)
-	if match, ok := etagMatch(r.Header.Get("If-None-Match"), etag); ok && match {
+	if ok := etagMatch(r.Header.Get("If-None-Match"), etag); ok {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
@@ -36,16 +36,16 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, full string) 
 }
 
 // etagMatch 解析 If-None-Match（可为 * 或多个 etag），判断是否命中。
-func etagMatch(ifNoneMatch, current string) (present, match bool) {
+func etagMatch(ifNoneMatch, current string) bool {
 	if ifNoneMatch == "" {
-		return false, false
+		return false
 	}
 	vals := strings.Split(ifNoneMatch, ",")
 	for i := range vals {
 		v := strings.TrimSpace(vals[i])
 		if v == "*" || v == current {
-			return true, true
+			return true
 		}
 	}
-	return true, false
+	return false
 }

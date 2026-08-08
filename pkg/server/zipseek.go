@@ -1,4 +1,4 @@
-﻿package server
+package server
 
 import (
 	"encoding/binary"
@@ -372,7 +372,7 @@ func (zs *zipStream) centralEntry(e *zipEntry) []byte {
 	binary.LittleEndian.PutUint32(b[0:], centralHeaderSig)
 	binary.LittleEndian.PutUint16(b[4:], 0x031e) // made by: unix | 45
 	binary.LittleEndian.PutUint16(b[6:], zip64Version)
-	binary.LittleEndian.PutUint16(b[8:], 0) // 不含 data descriptor（合法）
+	binary.LittleEndian.PutUint16(b[8:], 0)  // 不含 data descriptor（合法）
 	binary.LittleEndian.PutUint16(b[10:], 0) // store
 	putDosTime(b[12:], zs.getModTime())
 	binary.LittleEndian.PutUint32(b[16:], e.crc)
