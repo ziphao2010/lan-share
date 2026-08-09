@@ -9,12 +9,15 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
 	"lan-share/pkg/ipaddr"
 	"lan-share/pkg/server"
 )
+
+var version = "dev"
 
 type Config struct {
 	Port    int
@@ -27,21 +30,44 @@ type Config struct {
 	Path    string
 }
 
+func parseDuration(s string) (time.Duration, error) {
+	s = strings.TrimSpace(s)
+	if strings.HasSuffix(s, "d") {
+		days, err := strconv.Atoi(strings.TrimSpace(strings.TrimSuffix(s, "d")))
+		if err != nil {
+			return 0, fmt.Errorf("invalid duration %q: %w", s, err)
+		}
+		return time.Duration(days) * 24 * time.Hour, nil
+	}
+	return time.ParseDuration(s)
+}
+
 func parseArgs(args []string) (*Config, error) {
 	fs := flag.NewFlagSet("lan-share", flag.ContinueOnError)
 	var cfg Config
+	var expireStr string
+	var showVersion bool
 	fs.IntVar(&cfg.Port, "p", 8080, "listen port (auto-increments if busy)")
-	fs.IntVar(&cfg.Port, "port", 8080, "listen port (alias)")
-	fs.DurationVar(&cfg.Expire, "t", 0, "expire duration (e.g. 2h, 30m, 7d); 0 = never")
+	fs.StringVar(&expireStr, "t", "", "expire duration (e.g. 2h, 30m, 7d); empty = never")
 	fs.StringVar(&cfg.Secret, "k", "", "access secret; generates token-protected URLs")
-	fs.StringVar(&cfg.Secret, "token", "", "access secret (alias)")
 	fs.BoolVar(&cfg.ZipMode, "zip", false, "serve directory as zip archive")
 	fs.StringVar(&cfg.IP, "ip", "", "override advertised IP (auto-detect if empty)")
 	fs.StringVar(&cfg.Bind, "bind", "0.0.0.0", "listen address")
 	fs.BoolVar(&cfg.Quiet, "q", false, "quiet: only print URLs")
-	fs.BoolVar(&cfg.Quiet, "quiet", false, "quiet (alias)")
+	fs.BoolVar(&showVersion, "version", false, "print version and exit")
 	if err := fs.Parse(args); err != nil {
 		return nil, err
+	}
+	if showVersion {
+		fmt.Println("lan-share " + version)
+		os.Exit(0)
+	}
+	if expireStr != "" {
+		d, err := parseDuration(expireStr)
+		if err != nil {
+			return nil, err
+		}
+		cfg.Expire = d
 	}
 	switch fs.NArg() {
 	case 0:
@@ -82,6 +108,10 @@ func run(cfg *Config) error {
 	}
 	srv.SetZipMode(cfg.ZipMode)
 
+	if cfg.Secret != "" && cfg.Expire <= 0 {
+		cfg.Expire = 24 * 365 * time.Hour
+	}
+
 	var expire time.Time
 	if cfg.Expire > 0 {
 		expire = time.Now().Add(cfg.Expire)
@@ -120,8 +150,11 @@ func run(cfg *Config) error {
 	}
 
 	handler := http.Server{
-		Addr:    cfg.Bind + ":" + strconv.Itoa(port),
-		Handler: srv,
+		Addr:              cfg.Bind + ":" + strconv.Itoa(port),
+		Handler:           srv,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 20,
 	}
 	errCh := make(chan error, 1)
 	go func() {
