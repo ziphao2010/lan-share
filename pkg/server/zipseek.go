@@ -45,6 +45,7 @@ type zipEntry struct {
 	isDir      bool
 	size       int64
 	crc        uint32
+	modTime    time.Time
 	dataOffset int64 // 数据区在流中的起始偏移
 	hdr        []byte
 }
@@ -53,7 +54,6 @@ type zipIndex struct {
 	entries  []zipEntry
 	size     int64
 	cdOffset int64
-	modTime  time.Time
 }
 
 // layout 计算每个条目的 dataOffset 与总大小。
@@ -61,7 +61,7 @@ func (idx *zipIndex) layout() {
 	off := int64(0)
 	for i := range idx.entries {
 		e := &idx.entries[i]
-		e.hdr = makeLocalHeader(e.name, e.size, e.isDir)
+		e.hdr = makeLocalHeader(e.name, e.size, e.isDir, e.modTime)
 		e.dataOffset = off + int64(len(e.hdr))
 		entryLen := int64(len(e.hdr)) + e.size
 		if !e.isDir {
@@ -87,8 +87,7 @@ func (idx *zipIndex) newStream() *zipStream {
 
 // makeLocalHeader 构造 ZIP64 store 本地头。
 // 目录条目不写 flags(无 descriptor)，size 直接写 0，且不写 zip64 extra。
-func makeLocalHeader(name string, size int64, isDir bool) []byte {
-	mod := time.Now()
+func makeLocalHeader(name string, size int64, isDir bool, mod time.Time) []byte {
 	flags := uint16(0)
 	extra := 0
 	if !isDir {
@@ -134,12 +133,8 @@ func putDosTime(b []byte, t time.Time) {
 
 // buildZipIndex 遍历目录构建索引；文件内容流式读取一次计算 CRC。
 func buildZipIndex(dir string) (*zipIndex, error) {
-	info, err := os.Stat(dir)
-	if err != nil {
-		return nil, err
-	}
-	idx := &zipIndex{modTime: info.ModTime()}
-	err = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+	idx := &zipIndex{}
+	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -156,10 +151,11 @@ func buildZipIndex(dir string) (*zipIndex, error) {
 			return err
 		}
 		e := zipEntry{
-			name:  rel,
-			path:  p,
-			isDir: d.IsDir(),
-			size:  fi.Size(),
+			name:    rel,
+			path:    p,
+			isDir:   d.IsDir(),
+			size:    fi.Size(),
+			modTime: fi.ModTime(),
 		}
 		if e.isDir && !strings.HasSuffix(e.name, "/") {
 			e.name += "/"
@@ -255,7 +251,9 @@ func (zs *zipStream) Read(p []byte) (int, error) {
 			n, err := zs.readFromFile(p[total:])
 			total += n
 			zs.pos += int64(n)
-			if err != nil && err != io.EOF {
+			if n == 0 && err == io.EOF {
+				zs.pos = e.dataOffset + e.size
+			} else if err != nil && err != io.EOF {
 				return total, err
 			}
 		default: // descriptor 区（仅文件有）
@@ -352,8 +350,6 @@ func (zs *zipStream) Close() error {
 	return nil
 }
 
-func (zs *zipStream) getModTime() time.Time { return zs.idx.modTime }
-
 // centralBytes 构造中央目录 + zip64 EOCD + locator + EOCD。
 func (zs *zipStream) centralBytes() []byte {
 	var b []byte
@@ -374,7 +370,7 @@ func (zs *zipStream) centralEntry(e *zipEntry) []byte {
 	binary.LittleEndian.PutUint16(b[6:], zip64Version)
 	binary.LittleEndian.PutUint16(b[8:], 0)  // 不含 data descriptor（合法）
 	binary.LittleEndian.PutUint16(b[10:], 0) // store
-	putDosTime(b[12:], zs.getModTime())
+	putDosTime(b[12:], e.modTime)
 	binary.LittleEndian.PutUint32(b[16:], e.crc)
 	if e.isDir {
 		binary.LittleEndian.PutUint32(b[20:], 0)
