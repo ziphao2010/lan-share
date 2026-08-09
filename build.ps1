@@ -14,7 +14,7 @@ foreach ($t in $targets) {
   $env:GOARCH = $t.arch
   $name = "lan-share-$($t.os)-$($t.arch)$($t.ext)"
   go build -trimpath -ldflags="-s -w -X main.version=$version" -o "dist/$name" .
-  Write-Host "built dist/$name (v$version)"
+  Write-Host "built dist/$name ($version)"
 }
 Remove-Item Env:GOOS -ErrorAction SilentlyContinue
 Remove-Item Env:GOARCH -ErrorAction SilentlyContinue
