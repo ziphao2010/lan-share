@@ -1,6 +1,7 @@
 package server
 
 import (
+	"archive/zip"
 	"bytes"
 	"os"
 	"path/filepath"
@@ -28,6 +29,25 @@ func TestZipIndexInvalidationOnInPlaceEdit(t *testing.T) {
 	}
 	if idx2.changed(root) {
 		t.Fatal("unchanged tree should not invalidate")
+	}
+}
+
+// 目录条目 size 必须为 0（Linux 上目录 st_size=4096，会导致布局错乱）。
+func TestZipIndexDirSizeIsZero(t *testing.T) {
+	root := t.TempDir()
+	os.Mkdir(filepath.Join(root, "sub"), 0o755)
+	idx, err := buildZipIndex(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range idx.entries {
+		if e.isDir && e.size != 0 {
+			t.Fatalf("dir %s size = %d, want 0", e.name, e.size)
+		}
+	}
+	data := readAllIndex(t, idx)
+	if _, err := zip.NewReader(bytes.NewReader(data), int64(len(data))); err != nil {
+		t.Fatalf("invalid zip: %v", err)
 	}
 }
 

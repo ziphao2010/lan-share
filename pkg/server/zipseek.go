@@ -154,8 +154,10 @@ func buildZipIndex(dir string) (*zipIndex, error) {
 			name:    rel,
 			path:    p,
 			isDir:   d.IsDir(),
-			size:    fi.Size(),
 			modTime: fi.ModTime(),
+		}
+		if !d.IsDir() {
+			e.size = fi.Size()
 		}
 		if e.isDir && !strings.HasSuffix(e.name, "/") {
 			e.name += "/"

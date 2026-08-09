@@ -42,7 +42,15 @@ func (idx *zipIndex) changed(dir string) bool {
 		}
 		seen++
 		e := &idx.entries[i]
-		if e.size != fi.Size() || e.isDir != d.IsDir() || !e.modTime.Equal(fi.ModTime()) {
+		if e.isDir != d.IsDir() {
+			changed = true
+			return nil
+		}
+		if !e.isDir && e.size != fi.Size() {
+			changed = true
+			return nil
+		}
+		if !e.modTime.Equal(fi.ModTime()) {
 			changed = true
 		}
 		return nil
